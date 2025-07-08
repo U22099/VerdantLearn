@@ -91,7 +91,7 @@ export function Flashcard({ card, onMarkLearned }: FlashcardProps) {
               Get Smart Suggestion
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-80">
+          <PopoverContent className="w-80 max-h-[80vh] overflow-y-auto">
             <div className="grid gap-4">
               <div className="space-y-2">
                 <h4 className="font-medium leading-none font-headline text-primary">Memory Aids</h4>
