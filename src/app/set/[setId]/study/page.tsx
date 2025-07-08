@@ -6,6 +6,7 @@ import { useStudySets } from '@/hooks/use-study-sets';
 import { StudyMode } from '@/components/study-mode';
 import { ArrowLeft, BookCheck } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 
 export default function StudyPage() {
   const params = useParams();

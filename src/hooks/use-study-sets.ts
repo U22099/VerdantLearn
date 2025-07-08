@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { StudySet, Flashcard } from '@/lib/types';
-
-const LOCAL_STORAGE_KEY = 'verdantlearn-studysets';
+import { getAllSets, getSet, putSet, deleteSetFromDB } from '@/lib/idb';
 
 const getInitialData = (): StudySet[] => {
   return [
@@ -34,88 +33,91 @@ export function useStudySets() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      const item = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (item) {
-        setStudySets(JSON.parse(item));
-      } else {
-        // First time user, set initial data
-        const initialData = getInitialData();
-        setStudySets(initialData);
-        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialData));
-      }
-    } catch (error) {
-      console.error('Failed to load from localStorage', error);
-      setStudySets(getInitialData());
-    } finally {
+    const loadData = async () => {
+      if (typeof window === 'undefined' || !window.indexedDB) {
+        setStudySets(getInitialData()); // Fallback for SSR or no IDB support
         setIsLoaded(true);
-    }
+        return;
+      }
+      try {
+        let sets = await getAllSets();
+        if (sets.length === 0) {
+          const initialData = getInitialData();
+          for (const set of initialData) {
+            await putSet(set);
+          }
+          sets = initialData;
+        }
+        setStudySets(sets);
+      } catch (error) {
+        console.error('Failed to load from IndexedDB', error);
+        setStudySets(getInitialData());
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+    loadData();
   }, []);
 
-  useEffect(() => {
-    if (isLoaded) {
-      try {
-        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(studySets));
-      } catch (error) {
-        console.error('Failed to save to localStorage', error);
-      }
-    }
-  }, [studySets, isLoaded]);
-
-  const addSet = useCallback((name: string) => {
+  const addSet = useCallback(async (name: string) => {
     const newSet: StudySet = {
       id: Date.now().toString(),
       name,
       cards: [],
     };
+    await putSet(newSet);
     setStudySets((prevSets) => [...prevSets, newSet]);
     return newSet;
   }, []);
 
-  const addCardToSet = useCallback((setId: string, front: string, back: string) => {
+  const addCardToSet = useCallback(async (setId: string, front: string, back: string) => {
+    const set = await getSet(setId);
+    if (!set) return;
+
+    const newCard: Flashcard = {
+      id: `${setId}-${Date.now()}`,
+      front,
+      back,
+      isLearned: false,
+    };
+    
+    const updatedSet = { ...set, cards: [...set.cards, newCard] };
+    await putSet(updatedSet);
+
     setStudySets((prevSets) =>
-      prevSets.map((set) => {
-        if (set.id === setId) {
-          const newCard: Flashcard = {
-            id: `${setId}-${Date.now()}`,
-            front,
-            back,
-            isLearned: false,
-          };
-          return { ...set, cards: [...set.cards, newCard] };
-        }
-        return set;
-      })
+      prevSets.map((s) => (s.id === setId ? updatedSet : s))
     );
   }, []);
 
-  const updateCardLearnedStatus = useCallback((setId: string, cardId: string, isLearned: boolean) => {
+  const updateCardLearnedStatus = useCallback(async (setId: string, cardId: string, isLearned: boolean) => {
+    const set = await getSet(setId);
+    if (!set) return;
+
+    const updatedCards = set.cards.map((card) =>
+        card.id === cardId ? { ...card, isLearned } : card
+    );
+    const updatedSet = { ...set, cards: updatedCards };
+    await putSet(updatedSet);
+
     setStudySets((prevSets) =>
-      prevSets.map((set) => {
-        if (set.id === setId) {
-          return {
-            ...set,
-            cards: set.cards.map((card) =>
-              card.id === cardId ? { ...card, isLearned } : card
-            ),
-          };
-        }
-        return set;
-      })
+      prevSets.map((s) => (s.id === setId ? updatedSet : s))
     );
   }, []);
   
-  const deleteSet = useCallback((setId: string) => {
+  const deleteSet = useCallback(async (setId: string) => {
+    await deleteSetFromDB(setId);
     setStudySets(prevSets => prevSets.filter(set => set.id !== setId));
   }, []);
 
-  const deleteCard = useCallback((setId: string, cardId: string) => {
-    setStudySets(prevSets => prevSets.map(set => {
-      if (set.id === setId) {
-        return { ...set, cards: set.cards.filter(card => card.id !== cardId) };
-      }
-      return set;
-    }));
+  const deleteCard = useCallback(async (setId: string, cardId: string) => {
+    const set = await getSet(setId);
+    if (!set) return;
+
+    const updatedCards = set.cards.filter(card => card.id !== cardId);
+    const updatedSet = { ...set, cards: updatedCards };
+    await putSet(updatedSet);
+    
+    setStudySets(prevSets => prevSets.map(s => s.id === setId ? updatedSet : s));
   }, []);
 
 
